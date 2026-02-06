@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Podcast Hub - Debug</title>
+    <style>
+        body { background: #0f172a; color: white; font-family: sans-serif; padding: 20px; }
+        .btn { padding: 10px 20px; background: #0ea5e9; border: none; border-radius: 8px; color: white; cursor: pointer; margin: 5px; }
+        #log { background: #1e293b; padding: 10px; margin-top: 20px; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>Podcast Hub - Debug</h1>
+    <button class="btn" onclick="showTab('discover')">发现</button>
+    <button class="btn" onclick="showTab('podcasts')">订阅</button>
+    <button class="btn" onclick="testAPI()">测试API</button>
+    <div id="log"></div>
+    
+    <script>
+        function log(msg) {
+            document.getElementById('log').innerHTML += '<div>' + new Date().toLocaleTimeString() + ': ' + msg + '</div>';
+        }
+        
+        log('Script started');
+        
+        const API_BASE = '/api';
+        let podcasts = [];
+        
+        function showTab(tab) {
+            log('showTab called: ' + tab);
+        }
+        
+        function testAPI() {
+            log('Testing API...');
+            fetch(API_BASE + '/podcast')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    log('API: ' + d.data.length + ' podcasts');
+                })
+                .catch(function(e) {
+                    log('API error: ' + e.message);
+                });
+        }
+        
+        log('Script completed');
+    </script>
+</body>
+</html>

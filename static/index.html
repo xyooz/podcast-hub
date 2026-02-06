@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>🎙️ Podcast Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: {
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                        },
+                        dark: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617',
+                        }
+                    },
+                    spacing: {
+                        'safe-bottom': 'env(safe-area-inset-bottom)',
+                        'safe-top': 'env(safe-area-inset-top)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * {
+            font-family: 'Inter', system-ui, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+            padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+        }
+        
+        /* 导航栏 */
+        .nav-bar {
+            padding-top: env(safe-area-inset-top, 0px);
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
+        }
+        
+        .glass {
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .glass-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* 按钮 */
+        .btn {
+            touch-action: manipulation;
+            -webkit-touch-callout: none;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #0ea5e9 0%, #8b5cf6 100%);
+            transition: all 0.2s ease;
+        }
+        
+        .btn-primary:active {
+            transform: scale(0.95);
+        }
+        
+        .btn-glass {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-glass:active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .tab-btn {
+            opacity: 0.6;
+            transition: all 0.2s ease;
+        }
+        
+        .tab-btn.active {
+            opacity: 1;
+            background: rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.4);
+        }
+        
+        .tab-btn:active {
+            opacity: 1;
+        }
+        
+        /* 输入框 */
+        .input-glass {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        
+        .input-glass:focus {
+            border-color: rgba(56, 189, 248, 0.6);
+            outline: none;
+        }
+        
+        /* 卡片 */
+        .podcast-card {
+            aspect-ratio: 1;
+        }
+        
+        .podcast-card img {
+            transition: transform 0.3s ease;
+        }
+        
+        .podcast-card:active img {
+            transform: scale(1.05);
+        }
+        
+        /* 播放器 */
+        .player-bar {
+            padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
+        }
+        
+        .playing-bar {
+            background: linear-gradient(90deg, #0ea5e9 0%, #8b5cf6 50%, #c084fc 100%);
+            animation: gradient 3s ease infinite;
+            background-size: 200% 200%;
+        }
+        
+        @keyframes gradient {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* 模态框 */
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+        }
+        
+        .modal-content {
+            max-height: 80vh;
+        }
+        
+        /* 列表项 */
+        .list-item:active {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        /* 滚动条 */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.5);
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="text-white">
+    
+    <!-- 顶部导航 -->
+    <nav class="glass nav-bar fixed top-0 left-0 right-0 z-50">
+        <div class="max-w-5xl mx-auto px-4 py-3">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">🎙️</span>
+                    <h1 class="text-lg font-bold gradient-text hidden sm:block">Podcast Hub</h1>
+                </div>
+                
+                <!-- 移动端：滚动标签栏 -->
+                <div class="flex gap-1 overflow-x-auto pb-1 -mb-1 scrollbar-hide">
+                    <button onclick="showTab('discover')" 
+                            class="tab-btn active btn-glass px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                            data-tab="discover">🔍 发现</button>
+                    <button onclick="showTab('podcasts')" 
+                            class="tab-btn btn-glass px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                            data-tab="podcasts">📚 订阅</button>
+                    <button onclick="showTab('favorites')" 
+                            class="tab-btn btn-glass px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                            data-tab="favorites">❤️ 收藏</button>
+                    <button onclick="showTab('history')" 
+                            class="tab-btn btn-glass px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                            data-tab="history">🕐 历史</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- 主内容区 -->
+    <main class="pt-20 px-4 pb-4 max-w-5xl mx-auto">
+        
+        <!-- 发现页 -->
+        <div id="tab-discover" class="tab-content">
+            <!-- 添加播客 -->
+            <div class="glass-card rounded-xl p-4 mb-4">
+                <h2 class="text-base font-semibold mb-3">➕ 添加播客</h2>
+                <div class="flex flex-col gap-3">
+                    <input type="text" 
+                           id="add-podcast-url"
+                           placeholder="粘贴小宇宙分享链接..."
+                           class="input-glass w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 text-base">
+                    <button onclick="addPodcast()" 
+                            class="btn btn-primary w-full py-3 rounded-lg font-medium text-white">
+                        添加播客
+                    </button>
+                </div>
+                <p class="text-gray-400 text-xs mt-2">
+                    💡 支持小宇宙、网易云、Apple Podcasts 等平台
+                </p>
+            </div>
+            
+            <!-- 加载动画 -->
+            <div id="loading" class="hidden flex justify-center py-8">
+                <div class="flex items-center gap-2 text-gray-400">
+                    <div class="w-6 h-6 rounded-full bg-primary-500/30 animate-pulse"></div>
+                    <span>加载中...</span>
+                </div>
+            </div>
+            
+            <!-- 播客列表 - 移动端2列 -->
+            <div id="podcasts-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            </div>
+        </div>
+        
+        <!-- 订阅页 -->
+        <div id="tab-podcasts" class="tab-content hidden">
+            <div id="subscribed-podcasts" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            </div>
+        </div>
+        
+        <!-- 收藏页 -->
+        <div id="tab-favorites" class="tab-content hidden">
+            <div id="favorites-list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            </div>
+        </div>
+        
+        <!-- 历史页 -->
+        <div id="tab-history" class="tab-content hidden">
+            <div id="history-list" class="space-y-2">
+            </div>
+        </div>
+        
+    </main>
+    
+    <!-- 底部播放器 -->
+    <div id="player-bar" class="player-bar fixed bottom-0 left-0 right-0 playing-bar z-40 hidden">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+            <!-- 封面 -->
+            <img id="player-cover" 
+                 src="" 
+                 class="w-10 h-10 rounded-lg object-cover flex-shrink-0">
+            
+            <!-- 信息 -->
+            <div class="flex-1 min-w-0">
+                <h4 id="player-title" class="text-sm font-medium truncate text-white"></h4>
+                <p id="player-podcast" class="text-xs text-white/60 truncate"></p>
+            </div>
+            
+            <!-- 播放控制 -->
+            <div class="flex items-center gap-2">
+                <button onclick="togglePlay()" 
+                        id="play-btn"
+                        class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center btn active:scale-95">
+                    <span id="play-icon">▶️</span>
+                </button>
+                <button onclick="closePlayer()" 
+                        class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center btn active:scale-95">
+                    ✕
+                </button>
+            </div>
+        </div>
+        
+        <!-- 进度条 -->
+        <div class="px-4 pb-3 flex items-center gap-2 max-w-5xl mx-auto">
+            <span id="player-current" class="text-xs text-white/60 w-10 text-right">0:00</span>
+            <div class="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+                <div id="player-progress" class="h-full bg-white rounded-full" style="width: 0%"></div>
+            </div>
+            <span id="player-duration" class="text-xs text-white/60 w-10">0:00</span>
+        </div>
+        
+        <audio id="audio-player" ontimeupdate="updateProgress()" onended="onEnded()"></audio>
+    </div>
+    
+    <!-- 节目列表弹窗 -->
+    <div id="episodes-modal" class="modal-overlay fixed inset-0 z-50 hidden items-center justify-center p-4">
+        <div class="modal-content glass-card rounded-2xl w-full max-w-lg fade-in overflow-hidden">
+            <div class="p-4 border-b border-white/10">
+                <div class="flex gap-3">
+                    <img id="modal-cover" src="" class="w-16 h-16 rounded-xl object-cover flex-shrink-0">
+                    <div class="flex-1 min-w-0">
+                        <h3 id="modal-title" class="font-semibold truncate"></h3>
+                        <p id="modal-author" class="text-sm text-gray-400 truncate"></p>
+                        <p id="modal-count" class="text-xs text-gray-500 mt-1"></p>
+                    </div>
+                    <button onclick="closeModal()" 
+                            class="btn-glass w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
+                        ✕
+                    </button>
+                </div>
+            </div>
+            <div id="episodes-list" class="overflow-y-auto max-h-96 p-2 space-y-1">
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js?v=3"></script>
+</body>
+</html>
