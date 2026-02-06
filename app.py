@@ -205,7 +205,7 @@ def get_episodes(podcast_id):
                 "audio_url": e.audio_url,
                 "duration": e.duration,
                 "duration_str": _format_duration(e.duration),
-                "pub_date": e.pub_date.isoformat() if e.pub_date else None,
+                "pub_date": e.pub_date if e.pub_date else None,
                 "progress": e.progress or 0,
             } for e in episodes]
         })

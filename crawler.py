@@ -24,6 +24,10 @@ class PodcastParser:
             "domains": ["xiaoyuzhoufm.com", "www.xiaoyuzhoufm.com", "xyzfm.space"],
             "feed_prefix": "https://feed.xiaoyuzhoufm.com/podcast/",
         },
+        "ximalaya": {
+            "domains": ["ximalaya.com", "www.ximalaya.com"],
+            "feed_prefix": None,
+        },
         "netease": {
             "domains": ["music.163.com"],
             "feed_prefix": "https://podcastrx.netlify.app/feed/netease/",
@@ -50,6 +54,8 @@ class PodcastParser:
 
         if platform == "xiaoyuzhou":
             return cls._parse_xiaoyuzhou(url)
+        elif platform == "ximalaya":
+            return cls._parse_ximalaya(url)
         elif platform == "netease":
             return cls._parse_netease(url)
         elif platform == "apple":
@@ -182,6 +188,69 @@ class PodcastParser:
                 logger.error(f"解析 JSON-LD 失败: {e}")
         
         return []
+
+    @classmethod
+    def _parse_ximalaya(cls, url: str):
+        """解析喜马拉雅链接"""
+        # 提取专辑 ID
+        album_id = None
+        match = re.search(r'/album/(\d+)', url)
+        if match:
+            album_id = match.group(1)
+        
+        if not album_id:
+            raise ValueError(f"无法解析喜马拉雅链接: {url}")
+        
+        # RSS URL
+        rss_url = f"https://www.ximalaya.com/album/{album_id}.xml"
+        
+        # 尝试从 RSS 获取信息
+        try:
+            import feedparser
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(rss_url, headers=headers, timeout=15)
+            response.encoding = "utf-8"
+            
+            feed = feedparser.parse(response.text)
+            
+            if feed and feed.feed:
+                title = feed.feed.get("title", "未知播客")
+                description = feed.feed.get("subtitle", "") or feed.feed.get("description", "")
+                
+                # 获取封面
+                image_url = ""
+                if hasattr(feed.feed, 'image') and feed.feed.image:
+                    if isinstance(feed.feed.image, dict):
+                        image_url = feed.feed.image.get("href", "")
+                    elif isinstance(feed.feed.image, str):
+                        image_url = feed.feed.image
+                
+                episode_count = len(feed.entries) if feed.entries else 0
+                
+                return "ximalaya", {
+                    "title": title,
+                    "description": str(description)[:500] if description else "",
+                    "image_url": image_url,
+                    "rss_url": rss_url,
+                    "feed_url": url,
+                    "author": feed.feed.get("author", "") if hasattr(feed.feed, 'author') else "",
+                    "category": "喜马拉雅",
+                    "episode_count": episode_count,
+                }
+        except Exception as e:
+            logger.error(f"解析喜马拉雅 RSS 失败: {e}")
+        
+        # 返回基本信息
+        return "ximalaya", {
+            "title": "喜马拉雅播客",
+            "description": "",
+            "image_url": "",
+            "rss_url": rss_url,
+            "feed_url": url,
+            "author": "",
+            "category": "喜马拉雅",
+            "episode_count": 0,
+        }
 
     @classmethod
     def _parse_netease(cls, url: str):
@@ -371,8 +440,8 @@ class PodcastParser:
             return []
 
     @staticmethod
-    def _get_rss_episodes(rss_url: str) -> list:
-        """从 RSS 获取节目"""
+    def _get_ximalaya_episodes(rss_url: str) -> list:
+        """从喜马拉雅 RSS 获取节目"""
         try:
             import feedparser
             headers = {"User-Agent": "Mozilla/5.0"}
@@ -401,8 +470,64 @@ class PodcastParser:
             
             return entries
         except Exception as e:
+            logger.error(f"解析喜马拉雅 RSS 失败: {e}")
+            return []
+
+    @staticmethod
+    def _get_rss_episodes(rss_url: str) -> list:
+        """从 RSS 获取节目"""
+        try:
+            import feedparser
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(rss_url, headers=headers, timeout=15)
+            response.encoding = "utf-8"
+            
+            feed = feedparser.parse(response.text)
+            
+            entries = []
+            for entry in feed.entries:
+                duration = 0
+                if hasattr(entry, 'itunes_duration'):
+                    duration = PodcastParser._parse_duration(entry.itunes_duration)
+                
+                audio_url = ""
+                if hasattr(entry, 'enclosures') and entry.enclosures:
+                    audio_url = entry.enclosures[0].href
+                
+                # 解析日期为 ISO 格式
+                pub_date_str = entry.get("published", "")
+                pub_date = PodcastParser._parse_rss_date(pub_date_str)
+                
+                entries.append({
+                    "title": entry.get("title", ""),
+                    "description": entry.get("description", ""),
+                    "audio_url": audio_url,
+                    "duration": duration,
+                    "pub_date": pub_date,
+                })
+            
+            return entries
+        except Exception as e:
             logger.error(f"解析 RSS 失败: {e}")
             return []
+
+    @staticmethod
+    def _parse_rss_date(date_str: str) -> str:
+        """解析 RSS 日期字符串为 ISO 格式"""
+        if not date_str:
+            return None
+        try:
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(date_str)
+            return dt.isoformat()
+        except Exception:
+            # 如果解析失败，尝试常见格式
+            import re
+            # 处理 "Wed, 31 Dec 2025 00:00:00 GMT" 格式
+            match = re.search(r'(\d{1,2} \w{3} \d{4}', date_str)
+            if match:
+                return date_str  # 返回原始字符串
+            return date_str
 
     @staticmethod
     def _parse_duration(duration_str: str) -> int:
