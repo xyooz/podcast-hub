@@ -81,6 +81,10 @@
         .nav-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
         .nav-btn.active { background: rgba(56, 189, 248, 0.2); border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; }
         .nav-btn:active { transform: scale(0.95); }
+        .nav-btn:focus, .card:focus, .episode:focus, .btn-add:focus, button:focus {
+            outline: 2px solid #38bdf8;
+            outline-offset: 2px;
+        }
         .main { padding: 80px 16px 20px; max-width: 600px; margin: 0 auto; }
         .add-box { background: rgba(30, 41, 59, 0.8); padding: 16px; border-radius: 12px; margin-bottom: 20px; }
         .add-box h2 { font-size: 16px; margin-bottom: 12px; }
@@ -313,24 +317,25 @@
     </div>
 </head>
 <body>
-    <nav class="nav">
-        <button class="nav-btn active" onclick="showTab('discover')">发现</button>
-        <button class="nav-btn" onclick="showTab('podcasts')">订阅</button>
-        <button class="nav-btn" onclick="showTab('favorites')">收藏</button>
-        <button class="nav-btn" onclick="showTab('history')">历史</button>
-        <button class="nav-btn" onclick="showTab('stats')">统计</button>
+    <a href="#main-content" class="sr-only" style="position:absolute;left:-9999px;padding:8px;background:#0ea5e9;color:#fff;z-index:9999;transition:left 0.3s;" onfocus="this.style.left='0';" onblur="this.style.left='-9999px';">跳到主要内容</a>
+    <nav class="nav" aria-label="Main navigation">
+        <button class="nav-btn active" onclick="showTab('discover')" aria-selected="true" tabindex="0">发现</button>
+        <button class="nav-btn" onclick="showTab('podcasts')" aria-selected="false" tabindex="0">订阅</button>
+        <button class="nav-btn" onclick="showTab('favorites')" aria-selected="false" tabindex="0">收藏</button>
+        <button class="nav-btn" onclick="showTab('history')" aria-selected="false" tabindex="0">历史</button>
+        <button class="nav-btn" onclick="showTab('stats')" aria-selected="false" tabindex="0">统计</button>
     </nav>
     
     <div id="tab-discover" class="tab active">
-        <div class="main">
+        <div id="main-content" class="main" role="main">
             <div class="add-box">
                 <h2>添加播客</h2>
-                <input type="text" id="add-url" class="input" placeholder="粘贴小宇宙分享链接或RSS地址...">
+                <input type="text" id="add-url" class="input" placeholder="粘贴小宇宙分享链接或RSS地址..." aria-label="Podcast URL">
                 <button class="btn-add" onclick="addPodcast()">添加播客</button>
             </div>
             
             <div class="add-box" style="padding:12px;">
-                <input type="text" id="search-input" class="input" style="margin-bottom:8px;" placeholder="搜索播客和节目..." oninput="searchPodcasts(this.value)">
+                <input type="text" id="search-input" class="input" style="margin-bottom:8px;" placeholder="搜索播客和节目..." aria-label="Search" oninput="searchPodcasts(this.value)">
                 <div id="search-results"></div>
             </div>
             <div id="podcasts-grid" class="grid"></div>
@@ -360,7 +365,7 @@
             </div>
             <div class="modal-actions">
                 <div class="modal-btn refresh" onclick="refreshEpisodes()" title="刷新">🔄</div>
-                <div class="modal-btn close" onclick="closeModal()">✕</div>
+                <button class="modal-btn close" onclick="closeModal()" aria-label="Close">✕</button>
             </div>
         </div>
         <div class="sort-bar">
@@ -385,7 +390,7 @@
                     <span id="queue-count" style="display:inline;margin-left:8px;opacity:0.9;cursor:pointer;" onclick="toggleQueue()">📋 队列</span>
                 </div>
             </div>
-            <div class="player-btn" onclick="togglePlay()">▶️</div>
+            <button class="player-btn" onclick="togglePlay()" aria-label="Play/Pause">▶️</button>
             <div style="display:flex;align-items:center;gap:6px;">
                 <button class="speed-btn" onclick="changeSpeed()">1x</button>
             </div>
@@ -408,7 +413,7 @@
             </div>
         </div>
     </div>
-    <div class="theme-btn" onclick="toggleTheme()">🌙</div>
+    <button class="theme-btn" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
     
     <script>
         // Global error handler
@@ -616,7 +621,7 @@
                 var img = p.image_url || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect fill="%23334155" width="200" height="200"/><text x="100" y="100" text-anchor="middle" fill="%2394a3b8" font-size="60">🎙️</text></svg>';
                 var actions = '';
                 if (isSubscribed) {
-                    actions = '<div class="card-actions"><button class="card-btn" onclick="event.stopPropagation();deletePodcast(' + p.id + ')">🗑️</button><button class="card-btn" onclick="event.stopPropagation();addFavorite(' + p.id + ')">❤️</button></div>';
+                    actions = '<div class="card-actions"><button class="card-btn" onclick="event.stopPropagation();deletePodcast(' + p.id + ')" aria-label="Delete">🗑️</button><button class="card-btn" onclick="event.stopPropagation();addFavorite(' + p.id + ')" aria-label="Add to favorites">❤️</button></div>';
                 } else if (isFavorites) {
                     actions = '<div class="card-actions"><button class="card-btn" onclick="event.stopPropagation();removeFavorite(' + p.id + ')">💔</button></div>';
                 } else {

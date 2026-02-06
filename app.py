@@ -17,6 +17,7 @@ from flask_cors import CORS
 from flask_compress import Compress
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_caching import Cache
 
 from database import db, Podcast, Episode, Favorite, PlayHistory, init_db
 from crawler import PodcastParser
@@ -67,6 +68,13 @@ limiter = Limiter(
     strategy="fixed-window"
 )
 
+# Cache configuration
+cache = Cache(config={
+    'CACHE_TYPE': 'SimpleCache',
+    'CACHE_DEFAULT_TIMEOUT': 300,  # 5 minutes
+    'CACHE_THRESHOLD': 100,
+})
+
 # Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -101,6 +109,7 @@ def static_files(path):
 
 @app.route("/api/podcast", methods=["GET"])
 @limiter.limit("60 per minute")
+@cache.cached(timeout=60, query_string=True)  # Cache for 60 seconds
 def get_podcasts():
     """Get subscribed podcasts"""
     try:
@@ -162,6 +171,8 @@ def add_podcast():
         })
         
     except ValueError as e:
+        cache.clear()  # Clear cache on error
+
         logger.warning(f"Invalid input: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
@@ -186,6 +197,7 @@ def delete_podcast(podcast_id):
         return jsonify({"success": True, "message": "Unsubscribed"})
         
     except Podcast.DoesNotExist:
+        cache.clear()  # Clear cache
         return jsonify({"success": False, "error": "Podcast not found"}), 404
     except Exception as e:
         logger.error(f"Failed to delete podcast: {e}")
@@ -220,6 +232,7 @@ def refresh_podcast(podcast_id):
         })
         
     except Podcast.DoesNotExist:
+        cache.clear()  # Clear cache
         return jsonify({"success": False, "error": "Podcast not found"}), 404
     except Exception as e:
         logger.error(f"Failed to refresh podcast: {e}")
@@ -230,6 +243,7 @@ def refresh_podcast(podcast_id):
 
 @app.route("/api/podcast/<int:podcast_id>/episodes", methods=["GET"])
 @limiter.limit("60 per minute")
+@cache.cached(timeout=120, query_string=True)  # Cache for 2 minutes
 def get_episodes(podcast_id):
     """Get podcast episodes"""
     try:
@@ -297,6 +311,7 @@ def play_episode(episode_id):
 
 @app.route("/api/history", methods=["GET"])
 @limiter.limit("30 per minute")
+@cache.cached(timeout=60, query_string=True)
 def get_history():
     """Get playback history"""
     try:
@@ -315,6 +330,7 @@ def get_history():
 
 @app.route("/api/stats", methods=["GET"])
 @limiter.limit("30 per minute")
+@cache.cached(timeout=300, query_string=True)  # Cache for 5 minutes
 def get_stats():
     """Get playback statistics"""
     try:
@@ -386,6 +402,7 @@ def update_progress(episode_id):
 
 @app.route("/api/favorite", methods=["GET"])
 @limiter.limit("30 per minute")
+@cache.cached(timeout=120, query_string=True)
 def get_favorites():
     """Get favorites"""
     try:
@@ -418,6 +435,7 @@ def add_favorite(podcast_id):
         return jsonify({"success": True, "message": "Added to favorites"})
         
     except Podcast.DoesNotExist:
+        cache.clear()
         return jsonify({"success": False, "error": "Podcast not found"}), 404
     except Exception as e:
         logger.error(f"Failed to add favorite: {e}")
@@ -435,11 +453,24 @@ def remove_favorite(podcast_id):
             return jsonify({"success": True, "message": "Removed from favorites"})
         return jsonify({"success": False, "error": "Not favorited"}), 404
     except Exception as e:
+        cache.clear()
         logger.error(f"Failed to remove favorite: {e}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 # ---------- Health Check ----------
+
+@app.route("/api/cache/clear", methods=["POST"])
+@limiter.limit("10 per minute")
+def clear_cache():
+    """Clear all caches"""
+    try:
+        cache.clear()
+        return jsonify({"success": True, "message": "Cache cleared"})
+    except Exception as e:
+        logger.error(f"Failed to clear cache: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route("/health")
 def health_check():
@@ -448,7 +479,8 @@ def health_check():
         db.execute_sql("SELECT 1")
         return jsonify({
             "status": "healthy",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "cache": "enabled"
         })
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -587,6 +619,9 @@ if __name__ == "__main__":
     db_file = os.path.join(os.path.dirname(__file__), "podcasts.db")
     if not os.path.exists(db_file):
         init_db()
+    
+    # Initialize cache
+    cache.init_app(app)
     
     logger.info(f"Starting Podcast Hub on {SERVER_HOST}:{SERVER_PORT}")
     
