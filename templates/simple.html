@@ -185,11 +185,94 @@
         .player-info { flex: 1; min-width: 0; }
         .player-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .player-podcast { font-size: 12px; opacity: 0.7; }
-        .player-btn { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-        .player-progress { width: 100%; height: 4px; background: rgba(255,255,255,0.2); cursor: pointer; position: relative; margin-top: 8px; }
-        .player-progress-bar { height: 100%; background: #38bdf8; transition: width 0.2s; }
+        .player-btn { 
+            width: 44px; 
+            height: 44px; 
+            background: rgba(255,255,255,0.2); 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .player-btn:hover {
+            transform: scale(1.08);
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .player-btn:active {
+            transform: scale(0.95);
+        }
+        
+        #play-icon {
+            font-size: 18px;
+            display: block;
+            transition: transform 0.15s ease;
+        }
+        .player-progress { 
+            width: 100%; 
+            height: 5px; 
+            background: rgba(255,255,255,0.2); 
+            cursor: pointer; 
+            position: relative; 
+            margin-top: 12px; 
+            border-radius: 5px;
+            overflow: hidden;
+            transition: height 0.2s ease;
+        }
+        
+        .player-progress:hover {
+            height: 7px;
+        }
+        
+        .player-progress-bar { 
+            height: 100%; 
+            background: linear-gradient(90deg, #0ea5e9, #8b5cf6);
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
+            transition: width 0.1s linear;
+            position: relative;
+        }
+        
+        .player-progress-bar::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            background: #fff;
+            border-radius: 50%;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        
+        .player-progress:hover .player-progress-bar::after {
+            opacity: 1;
+        }
         .player-time { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 4px; display: flex; justify-content: space-between; }
-        .speed-btn { padding: 2px 8px; font-size: 10px; background: rgba(255,255,255,0.2); border-radius: 4px; }
+        .speed-btn { 
+            padding: 4px 10px; 
+            font-size: 11px; 
+            background: rgba(255,255,255,0.2); 
+            border-radius: 12px; 
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        
+        .speed-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+        
+        .speed-btn:active {
+            transform: scale(0.95);
+        }
         .theme-btn { position: fixed; top: 80px; right: 16px; width: 40px; height: 40px; background: rgba(30, 41, 59, 0.9); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 150; font-size: 18px; transition: all 0.2s ease; animation: pulse-glow 3s ease-in-out infinite; }
         .theme-btn:hover { transform: scale(1.1); }
         body.light-theme .theme-btn { background: rgba(248,250,252,0.9); }
@@ -390,7 +473,9 @@
                     <span id="queue-count" style="display:inline;margin-left:8px;opacity:0.9;cursor:pointer;" onclick="toggleQueue()">📋 队列</span>
                 </div>
             </div>
-            <button class="player-btn" onclick="togglePlay()" aria-label="Play/Pause">▶️</button>
+            <button id="play-btn" class="player-btn" onclick="togglePlay()" aria-label="Play/Pause">
+                <span id="play-icon">▶️</span>
+            </button>
             <div style="display:flex;align-items:center;gap:6px;">
                 <button class="speed-btn" onclick="changeSpeed()">1x</button>
             </div>
@@ -887,12 +972,13 @@
                 .then(function(d) {
                     if (d.success) {
                         document.getElementById('player').classList.add('show');
-                        document.getElementById('player-cover').src = d.image_url || '';
+                        document.getElementById('player-cover').src = d.image_url || '/static/cover.svg';
                         document.getElementById('player-title').textContent = d.title;
                         document.getElementById('player-podcast').textContent = d.podcast_title;
                         audio.src = d.audio_url;
                         audio.play();
                         isPlaying = true;
+                        updatePlayButton();
                     }
                 });
         }
@@ -904,14 +990,30 @@
                 audio.play();
             }
             isPlaying = !isPlaying;
+            updatePlayButton();
+        }
+        
+        function updatePlayButton() {
+            var icon = document.getElementById('play-icon');
+            if (icon) {
+                icon.textContent = isPlaying ? '⏸️' : '▶️';
+            }
+            var btn = document.getElementById('play-btn');
+            if (btn) {
+                btn.style.transform = 'scale(1.1)';
+                setTimeout(function() { btn.style.transform = 'scale(1)'; }, 150);
+            }
         }
         
         function changeSpeed() {
             var speeds = [1, 1.25, 1.5, 2];
             var idx = speeds.indexOf(currentSpeed);
-            currentSpeed = speeds[(idx + 1) % speeds.length];
+            var nextIdx = (idx + 1) % speeds.length;
+            currentSpeed = speeds[nextIdx];
             audio.playbackRate = currentSpeed;
-            showToast('播放速度: ' + currentSpeed + 'x');
+            var speedBtn = document.querySelector('.speed-btn');
+            if (speedBtn) speedBtn.textContent = currentSpeed + 'x';
+            showToast('播放速度: ' + currentSpeed + 'x', '▶️');
         }
         
         function addToQueue(podcastId, episodeIndex) {
@@ -978,6 +1080,7 @@
                 playNextInQueue();
             } else {
                 isPlaying = false;
+                updatePlayButton();
             }
         });
         
@@ -1052,6 +1155,7 @@
         
         audio.addEventListener('ended', function() {
             isPlaying = false;
+            updatePlayButton();
         });
         
         function toggleQueue() {
