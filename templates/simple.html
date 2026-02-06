@@ -537,7 +537,10 @@
         let currentSpeed = 1;
         let playQueue = [];
         let queueIndex = 0;
-        let audio = document.getElementById('audio');
+        var audio = document.getElementById('audio');
+        if (!audio) {
+            console.error('Audio element not found!');
+        }
         
         function showToast(msg, icon) {
             var toast = document.getElementById('toast');
@@ -1174,7 +1177,20 @@
         }
         
         audio.addEventListener('loadedmetadata', function() {
+            
             document.getElementById('player-duration').textContent = formatDuration(audio.duration);
+            updatePlayerProgress();
+        });
+        
+        audio.addEventListener('play', function() {
+            
+            updatePlayButton();
+            updatePlayerProgress();
+        });
+        
+        audio.addEventListener('pause', function() {
+            
+            updatePlayButton();
         });
     </script>
 </body>
