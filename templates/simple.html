@@ -946,6 +946,7 @@
             document.getElementById('player-cover').src = podcast.image_url || '';
             document.getElementById('player-title').textContent = ep.title;
             document.getElementById('player-podcast').textContent = podcast.title || '';
+            document.getElementById('player-duration').textContent = ep.duration_str || formatDuration(ep.duration);
             
             var audioUrl = typeof ep.audio_url === 'string' ? ep.audio_url.replace(/^\(|\)$/g, '').split(',')[0].replace(/['"]/g, '') : ep.audio_url;
             audioUrl = audioUrl.replace(/^\(|\)$/g, '');
@@ -1091,10 +1092,12 @@
         }
         
         function updatePlayerProgress() {
-            if (!audio.duration) return;
+            if (!audio || !audio.duration || isNaN(audio.duration)) return;
             var progress = (audio.currentTime / audio.duration) * 100;
+            if (progress > 100) progress = 100;
             document.getElementById('player-progress-bar').style.width = progress + '%';
             document.getElementById('player-current-time').textContent = formatDuration(Math.floor(audio.currentTime));
+            document.getElementById('player-duration').textContent = formatDuration(Math.floor(audio.duration));
         }
         
         function seekPlayer(event) {
