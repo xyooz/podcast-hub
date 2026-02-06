@@ -1,103 +1,145 @@
 #!/usr/bin/env python3
 """
-🎙️ Podcast Hub - 播客聚合平台 API
-Flask + SQLite
+Podcast Hub - 播客聚合平台 API
+Flask + SQLite + Peewee
 """
+
+import os
+import sys
+import logging
+from datetime import datetime
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_compress import Compress
-from datetime import datetime
-import os
-import logging
-
-# 配置
-import sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from database import db, Podcast, Episode, Favorite, PlayHistory, init_db
 from crawler import PodcastParser
 
+# ============ Configuration ============
+class Config:
+    """Application configuration"""
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'podcast-hub-2024')
+    DEBUG = os.environ.get('ENV') == 'development'
+    
+    # Static file caching (7 days)
+    SEND_FILE_MAX_AGE_DEFAULT = 86400
+    
+    # Gzip compression
+    COMPRESS_MIN_SIZE = 500
+    COMPRESS_LEVEL = 6
+    
+    # Rate limiting
+    RATELIMIT_DEFAULT = "100 per hour"
+    RATELIMIT_STORAGE_URL = "memory://"
+
+
+# ============ App Initialization ============
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "podcast-hub-2024"
-app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 86400  # 静态文件缓存 1 天
-app.config['COMPRESS_MIN_SIZE'] = 500  # 小于 500 字节不压缩
-app.config['COMPRESS_LEVEL'] = 6  # 压缩级别
+app.config.from_object(Config)
+
+# Security headers
+@app.after_request
+def add_security_headers(response):
+    """Add security headers"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+# CORS
 CORS(app)
+
+# Compression
 Compress(app)
 
-# 日志
-logging.basicConfig(level=logging.INFO)
+# Rate limiting
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[Config.RATELIMIT_DEFAULT],
+    storage_uri=Config.RATELIMIT_STORAGE_URL,
+    strategy="fixed-window"
+)
+
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# 配置
-SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 5000
-STATIC_FOLDER = os.path.join(os.path.dirname(__file__), "static")
-TEMPLATE_FOLDER = os.path.join(os.path.dirname(__file__), "templates")
+# Server config
+SERVER_HOST = os.environ.get('HOST', '0.0.0.0')
+SERVER_PORT = int(os.environ.get('PORT', 5000))
 
 
-# ==================== 测试路由 ====================
-
-@app.route("/simple")
-def simple():
-    """调试页面"""
-    return send_from_directory(TEMPLATE_FOLDER, "debug.html")
-
-
-# ==================== API 接口 ====================
+# ============ Routes ============
 
 @app.route("/")
 def index():
-    """首页"""
-    return send_from_directory(TEMPLATE_FOLDER, "simple.html")
+    """Homepage"""
+    return send_from_directory(
+        os.path.join(os.path.dirname(__file__), "templates"),
+        "simple.html"
+    )
 
 
 @app.route("/static/<path:path>")
 def static_files(path):
-    """静态文件"""
-    return send_from_directory(STATIC_FOLDER, path)
+    """Static files"""
+    static_folder = os.path.join(os.path.dirname(__file__), "static")
+    return send_from_directory(static_folder, path)
 
 
-# ---------- 播客相关 ----------
+# ---------- Podcasts ----------
 
 @app.route("/api/podcast", methods=["GET"])
+@limiter.limit("60 per minute")
 def get_podcasts():
-    """获取订阅列表"""
-    podcasts = Podcast.select().where(Podcast.is_subscribed == True).order_by(
-        Podcast.updated_at.desc()
-    )
-    return jsonify({
-        "success": True,
-        "data": [p.to_dict() for p in podcasts]
-    })
+    """Get subscribed podcasts"""
+    try:
+        podcasts = (Podcast.select()
+                   .where(Podcast.is_subscribed == True)
+                   .order_by(Podcast.updated_at.desc()))
+        
+        return jsonify({
+            "success": True,
+            "data": [p.to_dict() for p in podcasts]
+        })
+    except Exception as e:
+        logger.error(f"Failed to get podcasts: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/podcast", methods=["POST"])
+@limiter.limit("10 per minute")
 def add_podcast():
-    """添加播客（通过链接）"""
-    data = request.json
-    
-    if not data or "url" not in data:
-        return jsonify({"success": False, "error": "缺少 url 参数"}), 400
-    
-    url = data["url"]
-    
+    """Add podcast via URL"""
     try:
-        # 解析链接
-        platform, info = PodcastParser.parse_url(url)
-        logger.info(f"解析播客: {info['title']}")
+        data = request.get_json(force=True, silent=True)
+        if not data or "url" not in data:
+            return jsonify({"success": False, "error": "Missing url parameter"}), 400
         
-        # 检查是否已存在
+        url = data["url"]
+        platform, info = PodcastParser.parse_url(url)
+        logger.info(f"Parsed podcast: {info['title']}")
+        
+        # Check if exists
         existing = Podcast.select().where(Podcast.rss_url == info["rss_url"]).first()
         if existing:
             return jsonify({
                 "success": True,
-                "message": "播客已存在",
+                "message": "Podcast already exists",
                 "data": existing.to_dict()
             })
         
-        # 保存到数据库
+        # Create podcast
         podcast = Podcast.create(
             title=info["title"],
             description=info.get("description", ""),
@@ -109,93 +151,93 @@ def add_podcast():
             episode_count=info.get("episode_count", 0),
         )
         
-        # 同步节目列表（如果有原始数据直接使用）
+        # Sync episodes
         raw_episodes = info.get("_raw_episodes", [])
         _sync_episodes(podcast.id, info["rss_url"], raw_episodes)
         
         return jsonify({
             "success": True,
-            "message": "添加成功",
+            "message": "Added successfully",
             "data": podcast.to_dict()
         })
         
+    except ValueError as e:
+        logger.warning(f"Invalid input: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
-        logger.error(f"添加播客失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/podcast/<int:podcast_id>", methods=["GET"])
-def get_podcast(podcast_id):
-    """获取播客详情"""
-    try:
-        podcast = Podcast.get_by_id(podcast_id)
-        return jsonify({"success": True, "data": podcast.to_dict()})
-    except Podcast.DoesNotExist:
-        return jsonify({"success": False, "error": "播客不存在"}), 404
+        logger.error(f"Failed to add podcast: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/podcast/<int:podcast_id>", methods=["DELETE"])
+@limiter.limit("30 per minute")
 def delete_podcast(podcast_id):
-    """删除播客（取消订阅）- 同时删除节目、收藏、历史记录"""
+    """Delete podcast (unsubscribe)"""
     try:
         podcast = Podcast.get_by_id(podcast_id)
         
-        # 删除关联数据
+        # Delete related data
         Episode.delete().where(Episode.podcast == podcast_id).execute()
         Favorite.delete().where(Favorite.podcast == podcast_id).execute()
         PlayHistory.delete().where(PlayHistory.podcast == podcast_id).execute()
         
-        # 删除播客
         podcast.delete_instance()
         
-        return jsonify({"success": True, "message": "已取消订阅"})
+        return jsonify({"success": True, "message": "Unsubscribed"})
+        
     except Podcast.DoesNotExist:
-        return jsonify({"success": False, "error": "播客不存在"}), 404
+        return jsonify({"success": False, "error": "Podcast not found"}), 404
+    except Exception as e:
+        logger.error(f"Failed to delete podcast: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/podcast/<int:podcast_id>/refresh", methods=["POST"])
+@limiter.limit("5 per minute")
 def refresh_podcast(podcast_id):
-    """刷新播客（重新获取节目列表）"""
+    """Refresh podcast episodes"""
     try:
         podcast = Podcast.get_by_id(podcast_id)
         
-        # 根据分类获取节目
         raw_episodes = []
         
-        # 小宇宙页面
+        # Xiaoyuzhou
         if "xiaoyuzhoufm.com" in podcast.feed_url:
-            from crawler import PodcastParser
             raw_episodes = PodcastParser._get_xiaoyuzhou_episodes(podcast.feed_url)
-        # RSS feeds (xyzfm, danliren)
-        elif podcast.category == "rss" or "xyzfm" in podcast.rss_url or "danliren" in podcast.rss_url:
-            from crawler import PodcastParser
+        # RSS feeds
+        elif (podcast.category == "rss" or 
+              "xyzfm" in podcast.rss_url or 
+              "danliren" in podcast.rss_url):
             raw_episodes = PodcastParser._get_rss_episodes(podcast.rss_url)
         
         _sync_episodes(podcast_id, podcast.rss_url, raw_episodes)
         
-        # 重新获取更新后的播客信息
         podcast = Podcast.get_by_id(podcast_id)
         return jsonify({
             "success": True,
-            "message": "刷新成功",
+            "message": "Refreshed",
             "episode_count": podcast.episode_count
         })
+        
     except Podcast.DoesNotExist:
-        return jsonify({"success": False, "error": "播客不存在"}), 404
+        return jsonify({"success": False, "error": "Podcast not found"}), 404
+    except Exception as e:
+        logger.error(f"Failed to refresh podcast: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
-# ---------- 节目相关 ----------
+# ---------- Episodes ----------
 
 @app.route("/api/podcast/<int:podcast_id>/episodes", methods=["GET"])
+@limiter.limit("60 per minute")
 def get_episodes(podcast_id):
-    """获取节目列表"""
+    """Get podcast episodes"""
     try:
         podcast = Podcast.get_by_id(podcast_id)
         episodes = (Episode.select()
                    .where(Episode.podcast == podcast_id)
                    .order_by(Episode.pub_date.desc()))
         
-        # 限制返回字段，减少数据量
         return jsonify({
             "success": True,
             "data": [{
@@ -205,43 +247,35 @@ def get_episodes(podcast_id):
                 "audio_url": e.audio_url,
                 "duration": e.duration,
                 "duration_str": _format_duration(e.duration),
-                "pub_date": e.pub_date if e.pub_date else None,
+                "pub_date": e.pub_date.isoformat() if e.pub_date else None,
                 "progress": e.progress or 0,
             } for e in episodes]
         })
+        
     except Podcast.DoesNotExist:
-        return jsonify({"success": False, "error": "播客不存在"}), 404
+        return jsonify({"success": False, "error": "Podcast not found"}), 404
+    except Exception as e:
+        logger.error(f"Failed to get episodes: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
-@app.route("/api/episode/<int:episode_id>", methods=["GET"])
-def get_episode(episode_id):
-    """获取节目详情"""
-    try:
-        episode = Episode.get_by_id(episode_id)
-        return jsonify({"success": True, "data": episode.to_dict()})
-    except Episode.DoesNotExist:
-        return jsonify({"success": False, "error": "节目不存在"}), 404
-
-
-# ---------- 播放相关 ----------
+# ---------- Playback ----------
 
 @app.route("/api/play/<int:episode_id>", methods=["POST"])
+@limiter.limit("100 per minute")
 def play_episode(episode_id):
-    """记录播放"""
+    """Record playback"""
     try:
         episode = Episode.get_by_id(episode_id)
         
-        # 更新播放状态
         episode.is_played = True
         episode.save()
         
-        # 记录历史
         PlayHistory.create(
             episode=episode_id,
             podcast=episode.podcast_id,
             progress=0,
             duration=episode.duration,
-            created_at=datetime.now()
         )
         
         return jsonify({
@@ -253,38 +287,44 @@ def play_episode(episode_id):
                 "image_url": episode.podcast.get().image_url,
             }
         })
+        
     except Episode.DoesNotExist:
-        return jsonify({"success": False, "error": "节目不存在"}), 404
+        return jsonify({"success": False, "error": "Episode not found"}), 404
+    except Exception as e:
+        logger.error(f"Failed to play episode: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/history", methods=["GET"])
+@limiter.limit("30 per minute")
 def get_history():
-    """获取播放历史"""
-    history = (PlayHistory.select()
-               .order_by(PlayHistory.played_at.desc())
-               .limit(50))
-    
-    return jsonify({
-        "success": True,
-        "data": [h.to_dict() for h in history]
-    })
+    """Get playback history"""
+    try:
+        history = (PlayHistory.select()
+                   .order_by(PlayHistory.played_at.desc())
+                   .limit(50))
+        
+        return jsonify({
+            "success": True,
+            "data": [h.to_dict() for h in history]
+        })
+    except Exception as e:
+        logger.error(f"Failed to get history: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/stats", methods=["GET"])
+@limiter.limit("30 per minute")
 def get_stats():
-    """获取播放统计"""
+    """Get playback statistics"""
     try:
-        # 总播放次数
-        total_plays = PlayHistory.select().count()
-        
-        # 播放总时长（秒）
         from peewee import fn
+        
+        total_plays = PlayHistory.select().count()
         total_duration = PlayHistory.select(fn.SUM(PlayHistory.duration)).scalar() or 0
         
-        # 按播客统计
+        # Podcast stats
         podcast_stats = []
-        
-        # 获取有播放历史的播客
         query = (PlayHistory
                  .select(PlayHistory.podcast_id, fn.COUNT(PlayHistory.id).alias('count'))
                  .where(PlayHistory.podcast_id.is_null(False))
@@ -300,10 +340,9 @@ def get_stats():
                     "title": podcast.title,
                     "count": h.count
                 })
-            except:
-                pass
+            except Podcast.DoesNotExist:
+                continue
         
-        # 格式化总时长
         hours = total_duration // 3600
         minutes = (total_duration % 3600) // 60
         
@@ -312,20 +351,22 @@ def get_stats():
             "data": {
                 "total_plays": total_plays,
                 "total_duration": total_duration,
-                "total_duration_str": f"{hours}小时{minutes}分钟" if hours > 0 else f"{minutes}分钟",
+                "total_duration_str": f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m",
                 "podcasts": podcast_stats
             }
         })
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        logger.error(f"Failed to get stats: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/progress/<int:episode_id>", methods=["POST"])
+@limiter.limit("60 per minute")
 def update_progress(episode_id):
-    """更新播放进度"""
+    """Update playback progress"""
     try:
-        data = request.json
-        progress = data.get("progress", 0) if data else 0
+        data = request.get_json(silent=True) or {}
+        progress = data.get("progress", 0)
         
         episode = Episode.get_by_id(episode_id)
         episode.progress = progress
@@ -333,101 +374,116 @@ def update_progress(episode_id):
         episode.save()
         
         return jsonify({"success": True})
+        
     except Episode.DoesNotExist:
-        return jsonify({"success": False, "error": "节目不存在"}), 404
+        return jsonify({"success": False, "error": "Episode not found"}), 404
+    except Exception as e:
+        logger.error(f"Failed to update progress: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
-@app.route("/api/progress/<int:episode_id>", methods=["GET"])
-def get_progress(episode_id):
-    """获取播放进度"""
-    try:
-        episode = Episode.get_by_id(episode_id)
-        return jsonify({
-            "success": True,
-            "data": {
-                "progress": episode.progress,
-                "duration": episode.duration,
-                "played_at": episode.played_at.isoformat() if episode.played_at else None
-            }
-        })
-    except Episode.DoesNotExist:
-        return jsonify({"success": False, "error": "节目不存在"}), 404
-
-
-# ---------- 收藏相关 ----------
+# ---------- Favorites ----------
 
 @app.route("/api/favorite", methods=["GET"])
+@limiter.limit("30 per minute")
 def get_favorites():
-    """获取收藏列表"""
-    favorites = (Favorite.select()
-                .join(Podcast)
-                .order_by(Favorite.created_at.desc())
-                .limit(100))
-    
-    return jsonify({
-        "success": True,
-        "data": [f.podcast.to_dict() for f in favorites]
-    })
+    """Get favorites"""
+    try:
+        favorites = (Favorite.select()
+                    .join(Podcast)
+                    .order_by(Favorite.created_at.desc())
+                    .limit(100))
+        
+        return jsonify({
+            "success": True,
+            "data": [f.podcast.to_dict() for f in favorites]
+        })
+    except Exception as e:
+        logger.error(f"Failed to get favorites: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/favorite/<int:podcast_id>", methods=["POST"])
+@limiter.limit("30 per minute")
 def add_favorite(podcast_id):
-    """添加收藏"""
+    """Add to favorites"""
     try:
-        podcast = Podcast.get_by_id(podcast_id)
+        Podcast.get_by_id(podcast_id)
         
-        # 检查是否已收藏
         existing = Favorite.select().where(Favorite.podcast == podcast_id).first()
         if existing:
-            return jsonify({"success": True, "message": "已收藏"})
+            return jsonify({"success": True, "message": "Already favorited"})
         
         Favorite.create(podcast=podcast_id)
-        return jsonify({"success": True, "message": "收藏成功"})
+        return jsonify({"success": True, "message": "Added to favorites"})
+        
     except Podcast.DoesNotExist:
-        return jsonify({"success": False, "error": "播客不存在"}), 404
+        return jsonify({"success": False, "error": "Podcast not found"}), 404
+    except Exception as e:
+        logger.error(f"Failed to add favorite: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/favorite/<int:podcast_id>", methods=["DELETE"])
+@limiter.limit("30 per minute")
 def remove_favorite(podcast_id):
-    """取消收藏"""
-    favorite = Favorite.select().where(Favorite.podcast == podcast_id).first()
-    if favorite:
-        favorite.delete_instance()
-        return jsonify({"success": True, "message": "已取消收藏"})
-    return jsonify({"success": False, "error": "未收藏"}), 404
+    """Remove from favorites"""
+    try:
+        favorite = Favorite.select().where(Favorite.podcast == podcast_id).first()
+        if favorite:
+            favorite.delete_instance()
+            return jsonify({"success": True, "message": "Removed from favorites"})
+        return jsonify({"success": False, "error": "Not favorited"}), 404
+    except Exception as e:
+        logger.error(f"Failed to remove favorite: {e}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
-# ==================== 辅助函数 ====================
+# ---------- Health Check ----------
+
+@app.route("/health")
+def health_check():
+    """Health check endpoint"""
+    try:
+        db.execute_sql("SELECT 1")
+        return jsonify({
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 503
+
+
+# ============ Helper Functions ============
 
 def _sync_episodes(podcast_id: int, rss_url: str, raw_episodes: list = None):
-    """同步节目列表"""
+    """Sync podcast episodes"""
     try:
-        # 如果有原始数据，直接使用
         if raw_episodes:
             entries = raw_episodes
         else:
             entries = PodcastParser.get_episodes(rss_url)
         
-        # 更新节目数量
         Podcast.update(episode_count=len(entries)).where(Podcast.id == podcast_id).execute()
         
-        # 获取已存在的音频 URL
-        existing_urls = {ep.audio_url for ep in Episode.select(Episode.audio_url).where(Episode.podcast == podcast_id)}
+        existing_urls = {ep.audio_url for ep in 
+                        Episode.select(Episode.audio_url).where(Episode.podcast == podcast_id)}
         
         for entry in entries:
             audio_url = entry["audio_url"]
             if audio_url not in existing_urls:
-                # 解析日期
-                pub_date_str = entry.get("pub_date", "")
-                pub_date = None
-                if pub_date_str:
+                pub_date = datetime.now()
+                if entry.get("pub_date"):
                     try:
-                        from datetime import datetime
-                        pub_date = datetime.fromisoformat(pub_date_str.replace("Z", "+00:00").replace("+00:00", ""))
-                    except:
+                        pub_date = datetime.fromisoformat(
+                            entry["pub_date"].replace("Z", "+00:00").replace("+00:00", "")
+                        )
+                    except ValueError:
                         pub_date = datetime.now()
-                else:
-                    pub_date = datetime.now()
                 
                 Episode.create(
                     podcast=podcast_id,
@@ -440,16 +496,28 @@ def _sync_episodes(podcast_id: int, rss_url: str, raw_episodes: list = None):
                 )
                 existing_urls.add(audio_url)
         
-        logger.info(f"同步完成: {podcast_id}, {len(entries)} 集")
+        logger.info(f"Synced episodes: podcast_id={podcast_id}, count={len(entries)}")
+        
     except Exception as e:
-        logger.error(f"同步节目失败: {e}")
+        logger.error(f"Failed to sync episodes: {e}")
 
 
-# ==================== 模型扩展 ====================
+def _format_duration(seconds: int) -> str:
+    """Format duration in seconds to HH:MM:SS or MM:SS"""
+    if not seconds:
+        return "00:00"
+    minutes = seconds // 60
+    secs = seconds % 60
+    if minutes >= 60:
+        hours = minutes // 60
+        minutes = minutes % 60
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+# ============ Model Extensions ============
 
 class PodcastMixin:
-    """播客模型扩展"""
-    
     def to_dict(self):
         return {
             "id": self.id,
@@ -466,8 +534,6 @@ class PodcastMixin:
 
 
 class EpisodeMixin:
-    """节目模型扩展"""
-    
     def to_dict(self):
         return {
             "id": self.id,
@@ -483,8 +549,6 @@ class EpisodeMixin:
 
 
 class PlayHistoryMixin:
-    """播放历史模型扩展"""
-    
     def to_dict(self):
         return {
             "id": self.id,
@@ -496,50 +560,43 @@ class PlayHistoryMixin:
         }
 
 
-def _format_duration(seconds: int) -> str:
-    """格式化时长"""
-    if not seconds:
-        return "00:00"
-    minutes = seconds // 60
-    secs = seconds % 60
-    if minutes >= 60:
-        hours = minutes // 60
-        minutes = minutes % 60
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
-
-
-# 绑定扩展方法
+# Bind methods
 Podcast.to_dict = PodcastMixin.to_dict
 Episode.to_dict = EpisodeMixin.to_dict
 PlayHistory.to_dict = PlayHistoryMixin.to_dict
 
 
-# ==================== 缓存控制 ====================
+# ============ Cache Control ============
 
 @app.after_request
 def add_cache_control(response):
-    """API 请求禁用缓存，静态文件启用缓存"""
+    """Cache control headers"""
     if request.path.startswith('/api/'):
-        # API 无缓存
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
     elif request.path.startswith('/static/'):
-        # 静态文件缓存 7 天
         response.headers['Cache-Control'] = 'public, max-age=604800'
     return response
 
 
-# ==================== 启动 ====================
+# ============ Application Entry Point ============
 
 if __name__ == "__main__":
-    # 初始化数据库
-    if not os.path.exists("podcasts.db"):
+    # Initialize database
+    db_file = os.path.join(os.path.dirname(__file__), "podcasts.db")
+    if not os.path.exists(db_file):
         init_db()
     
-    # 启动服务
-    logger.info(f"🚀 Podcast Hub 启动中...")
-    logger.info(f"   访问地址: http://{SERVER_HOST}:{SERVER_PORT}")
+    logger.info(f"Starting Podcast Hub on {SERVER_HOST}:{SERVER_PORT}")
     
-    app.run(host=SERVER_HOST, port=SERVER_PORT, debug=True)
+    # Production mode check
+    if os.environ.get('ENV') == 'production':
+        logger.info("Running in production mode")
+    
+    app.run(
+        host=SERVER_HOST,
+        port=SERVER_PORT,
+        debug=Config.DEBUG,
+        threaded=True
+    )

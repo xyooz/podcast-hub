@@ -352,7 +352,7 @@
     
     <div id="modal" class="modal">
         <div class="modal-header">
-            <img id="modal-cover" class="modal-cover" src="">
+            <img id="modal-cover" class="modal-cover" src="" alt="Podcast cover">
             <div class="modal-info">
                 <div id="modal-title" class="modal-title"></div>
                 <div id="modal-author" class="modal-author"></div>
@@ -411,6 +411,31 @@
     <div class="theme-btn" onclick="toggleTheme()">🌙</div>
     
     <script>
+        // Global error handler
+        window.onerror = function(msg, url, line, col, error) {
+            console.error('Error:', msg, 'at', url, ':' + line);
+            return false;
+        };
+        
+        // Abort controller for API calls
+        const APIAbort = {
+            controllers: new Map(),
+            
+            abort(key) {
+                if (this.controllers.has(key)) {
+                    this.controllers.get(key).abort();
+                    this.controllers.delete(key);
+                }
+            },
+            
+            create(key) {
+                this.abort(key);
+                const ctrl = new AbortController();
+                this.controllers.set(key, ctrl);
+                return ctrl.signal;
+            }
+        };
+        
         const API = '/api';
         let podcasts = [];
         let currentEpisodes = [];
