@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Podcast Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/cover.svg">
+    <link rel="apple-touch-icon" href="/static/cover.svg">
     <style>
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -1177,6 +1180,29 @@
                 queueEl.style.display = 'none';
                 countEl.textContent = '📋 队列';
             }
+        }
+        
+        function savePlayerState() {
+            try {
+                var state = {
+                    currentTime: audio.currentTime || 0,
+                    isPlaying: isPlaying,
+                    currentSpeed: currentSpeed
+                };
+                localStorage.setItem('playerState', JSON.stringify(state));
+            } catch(e) {}
+        }
+        
+        function restorePlayerState() {
+            try {
+                var saved = localStorage.getItem('playerState');
+                if (saved) {
+                    var state = JSON.parse(saved);
+                    if (state.currentTime > 0) {
+                        // Will be restored when episode loads
+                    }
+                }
+            } catch(e) {}
         }
         
         audio.addEventListener('loadedmetadata', function() {
