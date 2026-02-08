@@ -1233,12 +1233,13 @@
             
             currentEpisodes = sorted;
             
+            // 渲染时直接根据 currentEpisodeId 设置高亮
             container.innerHTML = sorted.map(function(e, i) {
                 var dur = e.duration_str || formatDuration(e.duration);
                 var date = e.pub_date ? formatDate(e.pub_date) : '';
                 var delay = (i * 0.05).toFixed(2);
                 var playingClass = e.id === currentEpisodeId ? ' playing' : '';
-                return '<div class="episode' + playingClass + '" onclick="playEpisode(' + i + ')" style="animation: listStagger 0.3s ease ' + delay + 's backwards;">' +
+                return '<div class="episode' + playingClass + '" data-episode-id="' + e.id + '" onclick="playEpisode(' + i + ')" style="animation: listStagger 0.3s ease ' + delay + 's backwards;">' +
                     '<div class="episode-info"><div class="episode-title">' + e.title + '</div>' +
                     '<div class="episode-meta"><span class="episode-date">' + date + '</span><span>' + dur + '</span></div></div>' +
                     '<button class="queue-btn" onclick="event.stopPropagation();addToQueue(' + e.podcast_id + ',' + i + ')">+队列</button></div>';
@@ -1271,17 +1272,21 @@
             audio.play();
             isPlaying = true;
             
-            // 先更新播放列表高亮，再关闭 modal
+            // 更新播放列表高亮 - 使用 data-id 属性直接查找
             var modalList = document.getElementById('modal-list');
             if (modalList) {
-                var playingEpisodes = modalList.querySelectorAll('.episode');
-                playingEpisodes.forEach(function(el, i) {
-                    if (currentEpisodes[i] && currentEpisodes[i].id === currentEpisodeId) {
-                        el.classList.add('playing');
-                    } else {
-                        el.classList.remove('playing');
+                var episodes = modalList.querySelectorAll('.episode');
+                for (var i = 0; i < episodes.length; i++) {
+                    var episodeEl = episodes[i];
+                    if (episodeEl) {
+                        var epId = episodeEl.getAttribute('data-episode-id');
+                        if (epId == currentEpisodeId) {
+                            episodeEl.classList.add('playing');
+                        } else {
+                            episodeEl.classList.remove('playing');
+                        }
                     }
-                });
+                }
             }
             
             savePlayerState();
