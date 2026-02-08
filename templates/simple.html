@@ -170,6 +170,10 @@
         .episode { background: rgba(30, 41, 59, 0.7); border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); border: 1px solid transparent; }
         .episode:hover { background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); transform: translateX(4px); box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2); }
         .episode:active { transform: scale(0.98); }
+        .episode.playing { background: rgba(56, 189, 248, 0.2); border-color: rgba(56, 189, 248, 0.5); box-shadow: 0 0 20px rgba(56, 189, 248, 0.3); }
+        .episode.playing .episode-title { color: #38bdf8; }
+        .episode.playing::before { content: '▶'; margin-right: 8px; color: #38bdf8; font-size: 12px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .episode-info { flex: 1; min-width: 0; }
         .episode-title { font-size: 14px; font-weight: 500; }
         .episode-meta { font-size: 12px; color: #94a3b8; margin-top: 4px; display: flex; gap: 12px; }
@@ -1233,7 +1237,8 @@
                 var dur = e.duration_str || formatDuration(e.duration);
                 var date = e.pub_date ? formatDate(e.pub_date) : '';
                 var delay = (i * 0.05).toFixed(2);
-                return '<div class="episode" onclick="playEpisode(' + i + ')" style="animation: listStagger 0.3s ease ' + delay + 's backwards;">' +
+                var playingClass = e.id === currentEpisodeId ? ' playing' : '';
+                return '<div class="episode' + playingClass + '" onclick="playEpisode(' + i + ')" style="animation: listStagger 0.3s ease ' + delay + 's backwards;">' +
                     '<div class="episode-info"><div class="episode-title">' + e.title + '</div>' +
                     '<div class="episode-meta"><span class="episode-date">' + date + '</span><span>' + dur + '</span></div></div>' +
                     '<button class="queue-btn" onclick="event.stopPropagation();addToQueue(' + e.podcast_id + ',' + i + ')">+队列</button></div>';
@@ -1252,6 +1257,19 @@
             var podcast = podcasts.find(function(p) { return p.id === ep.podcast_id; }) || {};
             
             currentEpisodeId = ep.id;
+            
+            // 更新播放列表中的正在播放状态
+            var modalList = document.getElementById('modal-list');
+            if (modalList) {
+                var playingEpisodes = modalList.querySelectorAll('.episode');
+                playingEpisodes.forEach(function(el, i) {
+                    if (currentEpisodes[i] && currentEpisodes[i].id === currentEpisodeId) {
+                        el.classList.add('playing');
+                    } else {
+                        el.classList.remove('playing');
+                    }
+                });
+            }
             
             document.getElementById('player').classList.add('show');
             document.getElementById('player-cover').src = podcast.image_url || '';
