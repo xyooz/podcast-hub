@@ -21,6 +21,7 @@ from flask_caching import Cache
 
 from database import db, Podcast, Episode, Favorite, PlayHistory, init_db
 from crawler import PodcastParser
+from utils import sync_episodes, format_duration, parse_entry_pub_date
 
 # ============ Configuration ============
 class Config:
@@ -162,7 +163,7 @@ def add_podcast():
         
         # Sync episodes
         raw_episodes = info.get("_raw_episodes", [])
-        _sync_episodes(podcast.id, info["rss_url"], raw_episodes)
+        sync_episodes(podcast.id, info["rss_url"], raw_episodes)
         
         return jsonify({
             "success": True,
@@ -222,7 +223,7 @@ def refresh_podcast(podcast_id):
               "danliren" in podcast.rss_url):
             raw_episodes = PodcastParser._get_rss_episodes(podcast.rss_url)
         
-        _sync_episodes(podcast_id, podcast.rss_url, raw_episodes)
+        sync_episodes(podcast_id, podcast.rss_url, raw_episodes)
         
         podcast = Podcast.get_by_id(podcast_id)
         return jsonify({
@@ -260,7 +261,7 @@ def get_episodes(podcast_id):
                 "title": e.title[:200] if e.title else "",
                 "audio_url": e.audio_url,
                 "duration": e.duration,
-                "duration_str": _format_duration(e.duration),
+                "duration_str": format_duration(e.duration),
                 "pub_date": e.pub_date.isoformat() if hasattr(e.pub_date, 'isoformat') else str(e.pub_date) if e.pub_date else None,
                 "progress": e.progress or 0,
             } for e in episodes]
@@ -271,6 +272,55 @@ def get_episodes(podcast_id):
     except Exception as e:
         logger.error(f"Failed to get episodes: {e}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+# ---------- Search ----------
+
+@app.route("/api/search", methods=["GET"])
+@limiter.limit("30 per minute")
+def search_all():
+    """Search podcasts and episodes (full-text search)"""
+    try:
+        query = request.args.get("q", "").strip()
+        if not query or len(query) < 2:
+            return jsonify({"success": True, "data": {"podcasts": [], "episodes": []}})
+        
+        # Search podcasts (title, description)
+        podcasts = (Podcast.select()
+                   .where(
+                       (Podcast.title.contains(query)) | 
+                       (Podcast.description.contains(query))
+                   )
+                   .limit(10))
+        
+        # Search episodes (title, description)
+        episodes = (Episode.select(Episode, Podcast.title.alias('podcast_title'))
+                   .join(Podcast, on=(Episode.podcast == Podcast.id))
+                   .where(
+                       (Episode.title.contains(query)) | 
+                       (Episode.description.contains(query))
+                   )
+                   .order_by(Episode.pub_date.desc())
+                   .limit(20))
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "podcasts": [p.to_dict() for p in podcasts],
+                "episodes": [{
+                    "id": e.id,
+                    "podcast_id": e.podcast_id,
+                    "podcast_title": e.podcast_title,
+                    "title": e.title[:200] if e.title else "",
+                    "duration": e.duration,
+                    "duration_str": format_duration(e.duration),
+                    "pub_date": e.pub_date.isoformat() if hasattr(e.pub_date, 'isoformat') else str(e.pub_date) if e.pub_date else None,
+                } for e in episodes]
+            }
+        })
+    except Exception as e:
+        logger.error(f"Search failed: {e}")
+        return jsonify({"success": False, "error": "Search failed"}), 500
 
 
 # ---------- Playback ----------
@@ -492,59 +542,14 @@ def health_check():
 
 # ============ Helper Functions ============
 
-def _sync_episodes(podcast_id: int, rss_url: str, raw_episodes: list = None):
-    """Sync podcast episodes"""
-    try:
-        if raw_episodes:
-            entries = raw_episodes
-        else:
-            entries = PodcastParser.get_episodes(rss_url)
-        
-        Podcast.update(episode_count=len(entries)).where(Podcast.id == podcast_id).execute()
-        
-        existing_urls = {ep.audio_url for ep in 
-                        Episode.select(Episode.audio_url).where(Episode.podcast == podcast_id)}
-        
-        for entry in entries:
-            audio_url = entry["audio_url"]
-            if audio_url not in existing_urls:
-                pub_date = datetime.now()
-                if entry.get("pub_date"):
-                    try:
-                        pub_date = datetime.fromisoformat(
-                            entry["pub_date"].replace("Z", "+00:00").replace("+00:00", "")
-                        )
-                    except ValueError:
-                        pub_date = datetime.now()
-                
-                Episode.create(
-                    podcast=podcast_id,
-                    title=entry["title"],
-                    description=entry.get("description", ""),
-                    audio_url=audio_url,
-                    duration=entry.get("duration", 0),
-                    pub_date=pub_date,
-                    episode_num=0
-                )
-                existing_urls.add(audio_url)
-        
-        logger.info(f"Synced episodes: podcast_id={podcast_id}, count={len(entries)}")
-        
-    except Exception as e:
-        logger.error(f"Failed to sync episodes: {e}")
+# Moved to utils.py
+# def sync_episodes(podcast_id: int, rss_url: str, raw_episodes: list = None):
+#     """Sync podcast episodes"""
+#     ... (see utils.py)
 
-
-def _format_duration(seconds: int) -> str:
-    """Format duration in seconds to HH:MM:SS or MM:SS"""
-    if not seconds:
-        return "00:00"
-    minutes = seconds // 60
-    secs = seconds % 60
-    if minutes >= 60:
-        hours = minutes // 60
-        minutes = minutes % 60
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
+# def format_duration(seconds: int) -> str:
+#     """Format duration in seconds to HH:MM:SS or MM:SS"""
+#     ... (see utils.py)
 
 
 # ============ Model Extensions ============
@@ -573,7 +578,7 @@ class EpisodeMixin:
             "description": self.description,
             "audio_url": self.audio_url,
             "duration": self.duration,
-            "duration_str": _format_duration(self.duration),
+            "duration_str": format_duration(self.duration),
             "pub_date": self.pub_date.isoformat() if self.pub_date else None,
             "episode_num": self.episode_num,
             "is_played": self.is_played,
@@ -582,12 +587,15 @@ class EpisodeMixin:
 
 class PlayHistoryMixin:
     def to_dict(self):
+        podcast = self.podcast.get() if self.podcast else None
+        episode = self.episode.get() if self.episode else None
         return {
             "id": self.id,
             "episode_id": self.episode_id,
             "podcast_id": self.podcast_id,
-            "title": self.episode.get().title if self.episode else "",
-            "podcast_title": self.podcast.get().title if self.podcast else "",
+            "title": episode.title if episode else "",
+            "podcast_title": podcast.title if podcast else "",
+            "podcast_image": podcast.image_url if podcast else "",
             "played_at": self.played_at.isoformat() if self.played_at else None,
         }
 
