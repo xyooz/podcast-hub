@@ -895,7 +895,7 @@
                     document.getElementById('player-cover').src = podcast.image_url || '';
                     document.getElementById('player-title').textContent = ep.title;
                     document.getElementById('player-podcast').textContent = podcast.title || '';
-                    currentEpisodeId = ep.id;
+                    setPlayingEpisode(ep.id);
                     audio.src = ep.audio_url;
                     audio.play();
                     isPlaying = true;
@@ -1245,6 +1245,23 @@
                     '<button class="queue-btn" onclick="event.stopPropagation();addToQueue(' + e.podcast_id + ',' + i + ')">+队列</button></div>';
             }).join('');
         }
+
+        function setPlayingEpisode(episodeId) {
+            currentEpisodeId = episodeId;
+            var modalList = document.getElementById('modal-list');
+            if (!modalList) return;
+            var episodes = modalList.querySelectorAll('.episode');
+            for (var i = 0; i < episodes.length; i++) {
+                var episodeEl = episodes[i];
+                if (!episodeEl) continue;
+                var epId = episodeEl.getAttribute('data-episode-id');
+                if (epId == currentEpisodeId) {
+                    episodeEl.classList.add('playing');
+                } else {
+                    episodeEl.classList.remove('playing');
+                }
+            }
+        }
         
         function closeModal() {
             document.getElementById('modal').classList.remove('show');
@@ -1257,7 +1274,8 @@
             
             var podcast = podcasts.find(function(p) { return p.id === ep.podcast_id; }) || {};
             
-            currentEpisodeId = ep.id;
+            // 先更新高亮，确保点击后立即反馈
+            setPlayingEpisode(ep.id);
             
             document.getElementById('player').classList.add('show');
             document.getElementById('player-cover').src = podcast.image_url || '';
@@ -1271,23 +1289,6 @@
             audio.src = audioUrl;
             audio.play();
             isPlaying = true;
-            
-            // 更新播放列表高亮 - 使用 data-id 属性直接查找
-            var modalList = document.getElementById('modal-list');
-            if (modalList) {
-                var episodes = modalList.querySelectorAll('.episode');
-                for (var i = 0; i < episodes.length; i++) {
-                    var episodeEl = episodes[i];
-                    if (episodeEl) {
-                        var epId = episodeEl.getAttribute('data-episode-id');
-                        if (epId == currentEpisodeId) {
-                            episodeEl.classList.add('playing');
-                        } else {
-                            episodeEl.classList.remove('playing');
-                        }
-                    }
-                }
-            }
             
             savePlayerState();
             closeModal();
