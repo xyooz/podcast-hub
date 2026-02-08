@@ -1249,20 +1249,18 @@
         function setPlayingEpisode(episodeId) {
             currentEpisodeId = episodeId;
             
-            // 立即重新渲染列表，让高亮生效
-            if (currentEpisodes && currentEpisodes.length > 0) {
-                renderEpisodes(currentEpisodes);
-            }
-            
-            // 同时更新 DOM 元素的高亮状态
+            // 只更新 DOM class，不重新渲染（避免触发 listStagger 动画）
             var modalList = document.getElementById('modal-list');
             if (!modalList) return;
+            
             var episodes = modalList.querySelectorAll('.episode');
             for (var i = 0; i < episodes.length; i++) {
                 var episodeEl = episodes[i];
                 if (!episodeEl) continue;
+                
                 var epId = episodeEl.getAttribute('data-episode-id');
-                if (epId == currentEpisodeId) {
+                // 确保类型匹配（字符串 vs 数字）
+                if (String(epId) === String(episodeId)) {
                     episodeEl.classList.add('playing');
                 } else {
                     episodeEl.classList.remove('playing');
@@ -1302,7 +1300,7 @@
             // 延迟关闭，让用户看到高亮效果
             setTimeout(function() {
                 closeModal();
-            }, 100);
+            }, 150);
             
             // 加载保存的进度
             if (ep.progress > 0) {
