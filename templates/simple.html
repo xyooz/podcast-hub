@@ -1258,19 +1258,6 @@
             
             currentEpisodeId = ep.id;
             
-            // 更新播放列表中的正在播放状态
-            var modalList = document.getElementById('modal-list');
-            if (modalList) {
-                var playingEpisodes = modalList.querySelectorAll('.episode');
-                playingEpisodes.forEach(function(el, i) {
-                    if (currentEpisodes[i] && currentEpisodes[i].id === currentEpisodeId) {
-                        el.classList.add('playing');
-                    } else {
-                        el.classList.remove('playing');
-                    }
-                });
-            }
-            
             document.getElementById('player').classList.add('show');
             document.getElementById('player-cover').src = podcast.image_url || '';
             document.getElementById('player-title').textContent = ep.title;
@@ -1283,8 +1270,22 @@
             audio.src = audioUrl;
             audio.play();
             isPlaying = true;
-            closeModal();
+            
+            // 先更新播放列表高亮，再关闭 modal
+            var modalList = document.getElementById('modal-list');
+            if (modalList) {
+                var playingEpisodes = modalList.querySelectorAll('.episode');
+                playingEpisodes.forEach(function(el, i) {
+                    if (currentEpisodes[i] && currentEpisodes[i].id === currentEpisodeId) {
+                        el.classList.add('playing');
+                    } else {
+                        el.classList.remove('playing');
+                    }
+                });
+            }
+            
             savePlayerState();
+            closeModal();
             
             // 加载保存的进度
             if (ep.progress > 0) {
