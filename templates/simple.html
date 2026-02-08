@@ -1248,6 +1248,13 @@
 
         function setPlayingEpisode(episodeId) {
             currentEpisodeId = episodeId;
+            
+            // 立即重新渲染列表，让高亮生效
+            if (currentEpisodes && currentEpisodes.length > 0) {
+                renderEpisodes(currentEpisodes);
+            }
+            
+            // 同时更新 DOM 元素的高亮状态
             var modalList = document.getElementById('modal-list');
             if (!modalList) return;
             var episodes = modalList.querySelectorAll('.episode');
@@ -1291,7 +1298,11 @@
             isPlaying = true;
             
             savePlayerState();
-            closeModal();
+            
+            // 延迟关闭，让用户看到高亮效果
+            setTimeout(function() {
+                closeModal();
+            }, 100);
             
             // 加载保存的进度
             if (ep.progress > 0) {
